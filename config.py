@@ -1,9 +1,16 @@
+import os
+
+
 SYMBOLS = ["ethusdt", "dogeusdt", "ordiusdt", "xrpusdt", "pepeusdt", "flokiusdt"]
 
 OBI_THRESHOLD = 0.7
 TP_PERCENT = 0.005  # 0.5%
 SL_PERCENT = 0.003  # 0.3%
-CSV_FILE = "multi_coin_paper_trades.csv"
+
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://farisabbasi:farisabbasi@cluster0.ta7d6pv.mongodb.net/?retryWrites=true&w=majority&appName=trading-bot")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "obi_trading_bot")
+MONGODB_TRADES_COLLECTION = os.getenv("MONGODB_TRADES_COLLECTION", "trades")
+MONGODB_SESSIONS_COLLECTION = os.getenv("MONGODB_SESSIONS_COLLECTION", "sessions")
 
 CAPITAL_USDT = 360.0
 RISK_PER_TRADE_PERCENT = 1.0

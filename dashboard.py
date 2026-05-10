@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-import os
-import glob
 from datetime import datetime
+
+from storage import get_session_summaries, get_trades_for_session
 
 
 def format_duration(total_seconds):
@@ -15,35 +15,41 @@ st.set_page_config(page_title="OBI Trading Bot Dashboard", layout="wide")
 
 st.title("📊 OBI Bot: Trade Analysis Dashboard")
 
-# 1. Sidebar for File Selection
+# 1. Sidebar for Session Selection
 st.sidebar.header("Data Sources")
-current_csv = 'multi_coin_paper_trades.csv'
-data_folder = 'data'
-past_folder = 'past'
-
+all_sessions = get_session_summaries()
 all_options = []
-if os.path.exists(current_csv):
-    all_options.append(("🔴 ACTIVE SESSION", current_csv))
+for session in all_sessions:
+    started_at = session.get("started_at")
+    if isinstance(started_at, datetime):
+        label_time = started_at.strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        label_time = str(started_at or session["session_id"])
 
-archived_files = glob.glob(f"{data_folder}/*.csv")
-for f in sorted(archived_files, reverse=True):
-    timestamp = os.path.basename(f).replace('multi_coin_paper_trades_', '').replace('.csv', '')
-    all_options.append((f"📦 {timestamp}", f))
-
-past_files = glob.glob(f"{past_folder}/*.csv")
-for f in sorted(past_files, reverse=True):
-    all_options.append((f"🗂️  {os.path.basename(f)}", f))
+    prefix = "🔴 ACTIVE SESSION" if session.get("status") == "ACTIVE" else "📦 ARCHIVED SESSION"
+    start_capital = float(session.get("starting_capital", 0.0) or 0.0)
+    end_capital = session.get("ending_capital")
+    capital_label = (
+        f"Capital {start_capital:.2f} -> {float(end_capital):.2f}"
+        if end_capital is not None
+        else f"Capital {start_capital:.2f}"
+    )
+    label = f"{prefix} | {label_time} | {capital_label} | {session['trade_count']} events"
+    all_options.append((label, session["session_id"]))
 
 if not all_options:
-    st.info("No CSV files found. Make sure your bot is running or you have files in the 'data' folder.")
+    st.info("No MongoDB trade sessions found. Make sure bot is running and MongoDB Atlas is configured.")
     st.stop()
 
-selected_option = st.sidebar.selectbox("Select CSV to analyze", all_options, format_func=lambda x: x[0])
-selected_file = selected_option[1]
+selected_option = st.sidebar.selectbox("Select session to analyze", all_options, format_func=lambda x: x[0])
+selected_session_id = selected_option[1]
 view_mode = st.sidebar.radio("View", ["Trade Analysis", "Overview"])
 
-if selected_file:
-    df = pd.read_csv(selected_file)
+if selected_session_id:
+    df = pd.DataFrame(get_trades_for_session(selected_session_id))
+    if df.empty:
+        st.info("No trades stored for selected session yet.")
+        st.stop()
     
     # Parse timestamps for reliable ordering when deriving open trades.
     if 'Time' in df.columns:
@@ -74,7 +80,7 @@ if selected_file:
         st.subheader("📅 Monthly Overview (Daily USDT Profit)")
 
         if 'Time' not in df.columns or df['Time'].dropna().empty:
-            st.info("No valid timestamps in selected CSV.")
+            st.info("No valid timestamps in selected session.")
             st.stop()
 
         available_months = sorted(df['Time'].dropna().dt.to_period('M').astype(str).unique())
@@ -135,6 +141,9 @@ if selected_file:
     total_pnl = df_closed['PNL%'].sum()
     total_pnl_usdt = df_closed['PNL_USDT'].sum(skipna=True)
     open_trades = len(df_open)
+    current_session = next((session for session in all_sessions if session['session_id'] == selected_session_id), None)
+    starting_capital = float(current_session.get('starting_capital', 0.0)) if current_session else 0.0
+    ending_capital = current_session.get('ending_capital') if current_session else None
 
     session_runtime = "00:00:00"
     if 'Time' in df.columns and not df['Time'].dropna().empty:
@@ -162,7 +171,8 @@ if selected_file:
     col5.metric("Open Trades", open_trades)
     col6.metric("Pair With Most Loss", worst_symbol, delta=f"{worst_symbol_pnl:.2f}%")
     col7.metric("Session Runtime", session_runtime)
-    col8.metric("Avg Open Leverage", f"{avg_leverage:.2f}x")
+    capital_display = f"{float(ending_capital):.2f}" if ending_capital is not None else f"{starting_capital:.2f}"
+    col8.metric("Session Capital", capital_display, delta=f"Start {starting_capital:.2f}")
 
     # 3. Performance Visuals
     st.divider()
