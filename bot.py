@@ -26,6 +26,25 @@ class MultiCoinOBIBot:
         self.is_running = True
         initialize_csv()
 
+    async def reset_session_cycle(self, reason):
+        message = (
+            f"{reason}!\\nSession PNL: {self.cumulative_pnl:.2f}% "
+            f"({self.cumulative_pnl_usdt:.2f} USDT)\\n"
+            "Archiving trades, resetting PNL, and starting new +5% / -5% cycle."
+        )
+        print(message)
+        send_telegram(message)
+
+        await archive_and_reset_csv()
+
+        self.cumulative_pnl = 0.0
+        self.cumulative_pnl_usdt = 0.0
+        self.active_trades = {symbol: None for symbol in SYMBOLS}
+
+        reset_message = "Session reset complete. Bot running with fresh targets: +5% / -5%."
+        print(reset_message)
+        send_telegram(reset_message)
+
     @staticmethod
     def get_obi(depth):
         bids_list = depth.get("b") or depth.get("bids")
@@ -94,26 +113,10 @@ class MultiCoinOBIBot:
                 self.active_trades[symbol] = None
 
                 if self.cumulative_pnl >= MAX_PROFIT_LIMIT:
-                    message = (
-                        f"Target reached!\\nSession PNL: {self.cumulative_pnl:.2f}% "
-                        f"({self.cumulative_pnl_usdt:.2f} USDT)\\n"
-                        "Archiving trades and stopping bot."
-                    )
-                    print(message)
-                    send_telegram(message)
-                    await archive_and_reset_csv()
-                    self.is_running = False
+                    await self.reset_session_cycle("Target reached")
 
                 elif self.cumulative_pnl <= MAX_LOSS_LIMIT:
-                    message = (
-                        f"Circuit breaker hit!\\nSession PNL: {self.cumulative_pnl:.2f}% "
-                        f"({self.cumulative_pnl_usdt:.2f} USDT)\\n"
-                        "Archiving trades and stopping bot."
-                    )
-                    print(message)
-                    send_telegram(message)
-                    await archive_and_reset_csv()
-                    self.is_running = False
+                    await self.reset_session_cycle("Circuit breaker hit")
 
         elif abs(obi) > OBI_THRESHOLD and self.is_running:
             side = "LONG" if obi > 0 else "SHORT"
