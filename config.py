@@ -7,7 +7,8 @@ OBI_THRESHOLD = 0.7
 TP_PERCENT = 0.005  # 0.5%
 SL_PERCENT = 0.003  # 0.3%
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://farisabbasi:farisabbasi@cluster0.ta7d6pv.mongodb.net/?retryWrites=true&w=majority&appName=trading-bot")
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://farisabbasi:farisabbasi@ac-zfly15z-shard-00-00.ta7d6pv.mongodb.net:27017,ac-zfly15z-shard-00-01.ta7d6pv.mongodb.net:27017,ac-zfly15z-shard-00-02.ta7d6pv.mongodb.net:27017/?ssl=true&replicaSet=atlas-xu4fdv-shard-0&authSource=admin&retryWrites=true&w=majority&appName=trading-bot")
+
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "obi_trading_bot")
 MONGODB_TRADES_COLLECTION = os.getenv("MONGODB_TRADES_COLLECTION", "trades")
 MONGODB_SESSIONS_COLLECTION = os.getenv("MONGODB_SESSIONS_COLLECTION", "sessions")
