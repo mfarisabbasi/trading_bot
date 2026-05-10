@@ -4,7 +4,6 @@ from datetime import datetime
 from binance import AsyncClient, BinanceSocketManager
 
 from config import (
-    CAPITAL_USDT,
     MAX_LOSS_LIMIT,
     MAX_LEVERAGE,
     MAX_PROFIT_LIMIT,
@@ -15,33 +14,38 @@ from config import (
     TP_PERCENT,
 )
 from notifier import send_telegram
-from storage import initialize_csv, log_trade, archive_and_reset_csv
+from storage import archive_and_reset_storage, initialize_storage, log_trade
 
 
 class MultiCoinOBIBot:
     def __init__(self):
         self.active_trades = {symbol: None for symbol in SYMBOLS}
+        self.current_capital = initialize_storage()
         self.cumulative_pnl = 0.0
         self.cumulative_pnl_usdt = 0.0
         self.is_running = True
-        initialize_csv()
 
     async def reset_session_cycle(self, reason):
+        ending_capital = self.current_capital + self.cumulative_pnl_usdt
         message = (
             f"{reason}!\\nSession PNL: {self.cumulative_pnl:.2f}% "
             f"({self.cumulative_pnl_usdt:.2f} USDT)\\n"
+            f"Capital: {self.current_capital:.2f} -> {ending_capital:.2f} USDT\\n"
             "Archiving trades, resetting PNL, and starting new +5% / -5% cycle."
         )
         print(message)
         send_telegram(message)
 
-        await archive_and_reset_csv()
+        self.current_capital = await archive_and_reset_storage(self.cumulative_pnl_usdt)
 
         self.cumulative_pnl = 0.0
         self.cumulative_pnl_usdt = 0.0
         self.active_trades = {symbol: None for symbol in SYMBOLS}
 
-        reset_message = "Session reset complete. Bot running with fresh targets: +5% / -5%."
+        reset_message = (
+            f"Session reset complete. New capital: {self.current_capital:.2f} USDT. "
+            "Bot running with fresh targets: +5% / -5%."
+        )
         print(reset_message)
         send_telegram(reset_message)
 
@@ -86,7 +90,7 @@ class MultiCoinOBIBot:
                 pnl_usdt = trade["notional_usdt"] * price_move
 
                 self.cumulative_pnl_usdt += pnl_usdt
-                self.cumulative_pnl = (self.cumulative_pnl_usdt / CAPITAL_USDT) * 100
+                self.cumulative_pnl = (self.cumulative_pnl_usdt / self.current_capital) * 100 if self.current_capital > 0 else 0
 
                 await log_trade(
                     [
@@ -123,11 +127,11 @@ class MultiCoinOBIBot:
             target = price * (1 + TP_PERCENT if side == "LONG" else 1 - TP_PERCENT)
             stop = price * (1 - SL_PERCENT if side == "LONG" else 1 + SL_PERCENT)
 
-            risk_usdt = CAPITAL_USDT * (RISK_PER_TRADE_PERCENT / 100)
-            notional_usdt = risk_usdt / SL_PERCENT if SL_PERCENT > 0 else CAPITAL_USDT
-            raw_leverage = notional_usdt / CAPITAL_USDT if CAPITAL_USDT > 0 else 1
+            risk_usdt = self.current_capital * (RISK_PER_TRADE_PERCENT / 100)
+            notional_usdt = risk_usdt / SL_PERCENT if SL_PERCENT > 0 else self.current_capital
+            raw_leverage = notional_usdt / self.current_capital if self.current_capital > 0 else 1
             leverage = max(1.0, min(raw_leverage, float(MAX_LEVERAGE)))
-            notional_usdt = CAPITAL_USDT * leverage
+            notional_usdt = self.current_capital * leverage
             qty = notional_usdt / price if price > 0 else 0
 
             self.active_trades[symbol] = {
